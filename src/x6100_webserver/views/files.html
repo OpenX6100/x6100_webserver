@@ -1,8 +1,12 @@
 % rebase('base.html', title='File browser')
-<i class="si-folder"></i> <a href="..">..</a><br/>
+% if has_parent:
+<i class="si-folder"></i> <a href="/files/{{!parent_path_url}}/">..</a><br/>
+% end
 % for item in dirs:
-<i class="si-folder"></i> <a href="{{item}}/">{{item}}</a><br/>
+<i class="si-folder"></i> <a href="/files/{{!item['path_url']}}/">{{item['name']}}</a><br/>
 % end
 % for item in files:
-<i class="si-file"></i> <a href="{{item}}">{{item}}</a><br/>
+<i class="si-file"></i>
+<a href="/files/{{!item['path_url']}}?view">{{item['name']}}</a>
+<a href="/files/{{!item['path_url']}}" title="download">[dl]</a><br/>
 % end

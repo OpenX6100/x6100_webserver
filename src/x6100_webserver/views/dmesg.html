@@ -1,0 +1,15 @@
+% rebase('base.html', title='dmesg (last 200)')
+
+<h3>dmesg (last 200 lines)</h3>
+
+<p><a href="/dmesg">Refresh</a></p>
+
+% if error:
+  <p><strong>Error:</strong> {{error}}</p>
+% end
+
+<pre style="white-space: pre-wrap; word-break: break-word;">
+% for line in lines:
+{{line}}
+% end
+</pre>

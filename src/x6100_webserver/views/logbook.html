@@ -1,0 +1,167 @@
+% rebase('base.html', title='Logbook')
+
+<p>Manage local FT8 ADIF log and QSO worked database.</p>
+
+<h3>Actions</h3>
+<p>
+  <button id="download-adi-btn">Download local ADI</button>
+  <button id="delete-adi-btn">Delete local ADI</button>
+  <button id="reset-qsolog-btn">Reset qsolog DB</button>
+</p>
+
+<p>
+  <label for="upload-adi">Upload incoming ADI:</label>
+  <input id="upload-adi" type="file" accept=".adi,.ADI">
+  <button id="upload-adi-btn">Upload</button>
+</p>
+<p id="action-status"></p>
+
+<h3>Local ADI (<code>/mnt/ft_log.adi</code>)</h3>
+<p id="adi-summary">Loading...</p>
+<table>
+  <thead>
+    <tr>
+      <th>CALL</th>
+      <th>QSO_DATE</th>
+      <th>TIME_ON</th>
+      <th>MODE</th>
+      <th>SUBMODE</th>
+      <th>BAND</th>
+      <th>FREQ</th>
+      <th>RST_SENT</th>
+      <th>RST_RCVD</th>
+      <th>GRIDSQUARE</th>
+      <th>MY_GRIDSQUARE</th>
+      <th>STATION_CALLSIGN</th>
+    </tr>
+  </thead>
+  <tbody id="adi-tbody">
+  </tbody>
+</table>
+
+<script>
+  const COLS = [
+    "CALL", "QSO_DATE", "TIME_ON", "MODE", "SUBMODE", "BAND",
+    "FREQ", "RST_SENT", "RST_RCVD", "GRIDSQUARE", "MY_GRIDSQUARE",
+    "STATION_CALLSIGN"
+  ];
+
+  function setStatus(msg, isError) {
+    const el = $("#action-status");
+    el.text(msg || "");
+    el.css("color", isError ? "crimson" : "");
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderTable(data) {
+    const tbody = $("#adi-tbody");
+    tbody.empty();
+    if (!data.exists) {
+      $("#adi-summary").text("No local ADI file.");
+      return;
+    }
+    $("#adi-summary").text(data.count + " QSO(s)");
+    if (!data.records || data.records.length === 0) {
+      tbody.append("<tr><td colspan=\"" + COLS.length + "\">Empty ADI file</td></tr>");
+      return;
+    }
+    data.records.forEach(function (rec) {
+      let cells = COLS.map(function (k) {
+        return "<td>" + escapeHtml(rec[k] || "") + "</td>";
+      }).join("");
+      tbody.append("<tr>" + cells + "</tr>");
+    });
+  }
+
+  function loadAdi() {
+    $("#adi-summary").text("Loading...");
+    $.ajax({
+      url: "/api/logbook/adi",
+      method: "GET",
+      success: function (data) {
+        renderTable(data);
+      },
+      error: function (xhr) {
+        $("#adi-summary").text("Failed to load ADI");
+        setStatus((xhr.responseJSON && xhr.responseJSON.msg) || "Failed to load ADI", true);
+      }
+    });
+  }
+
+  $("#download-adi-btn").on("click", function () {
+    window.location.href = "/api/logbook/adi/download";
+  });
+
+  $("#upload-adi-btn").on("click", function () {
+    const input = document.getElementById("upload-adi");
+    if (!input.files || input.files.length === 0) {
+      setStatus("Select an .adi file first", true);
+      return;
+    }
+    if (!confirm("Upload incoming ADI? The GUI will restart briefly (screen blanks).")) {
+      return;
+    }
+    setStatus("Uploading (restarting GUI)...");
+    const fd = new FormData();
+    fd.append("file", input.files[0]);
+    $.ajax({
+      url: "/api/logbook/adi/upload",
+      method: "POST",
+      data: fd,
+      processData: false,
+      contentType: false,
+      success: function (result) {
+        setStatus((result && result.msg) ||
+          "Uploaded to /mnt/incoming_log.adi. GUI restarted to import into worked DB.");
+        input.value = "";
+      },
+      error: function (xhr) {
+        setStatus((xhr.responseJSON && xhr.responseJSON.msg) || "Upload failed", true);
+      }
+    });
+  });
+
+  $("#delete-adi-btn").on("click", function () {
+    if (!confirm("Delete local ADI (/mnt/ft_log.adi)? The GUI will restart briefly. This cannot be undone.")) {
+      return;
+    }
+    setStatus("Deleting (restarting GUI)...");
+    $.ajax({
+      url: "/api/logbook/adi",
+      method: "DELETE",
+      success: function (result) {
+        setStatus((result && result.msg) || "Local ADI deleted. GUI restarted.");
+        loadAdi();
+      },
+      error: function (xhr) {
+        setStatus((xhr.responseJSON && xhr.responseJSON.msg) || "Delete failed", true);
+      }
+    });
+  });
+
+  $("#reset-qsolog-btn").on("click", function () {
+    if (!confirm("Reset qsolog DB (/mnt/qso_log.db)? The GUI will restart briefly. Worked markers will be cleared. This cannot be undone.")) {
+      return;
+    }
+    setStatus("Resetting (restarting GUI)...");
+    $.ajax({
+      url: "/api/logbook/qsolog/reset",
+      method: "POST",
+      success: function (result) {
+        setStatus((result && result.msg) || "qsolog DB cleared. GUI restarted.");
+      },
+      error: function (xhr) {
+        setStatus((xhr.responseJSON && xhr.responseJSON.msg) || "Reset failed", true);
+      }
+    });
+  });
+
+  loadAdi();
+</script>

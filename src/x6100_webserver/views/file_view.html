@@ -1,0 +1,49 @@
+% rebase('base.html', title='View file')
+
+<h3>{{filepath}}</h3>
+<p>
+  <a href="/files/{{!filepath_url}}">Download</a>
+  |
+  <a href="/files/{{!filepath_url}}?raw">Raw</a>
+</p>
+
+% if is_image:
+  <img src="{{image_url}}" alt="{{filepath}}" style="max-width: 100%; height: auto;" />
+% else:
+  % if is_txt_editable:
+    <form id="txt-edit-form">
+      <textarea id="txt-content" name="content" rows="20" style="width: 100%; box-sizing: border-box; font-family: inherit; font-size: 1rem;">{{text_content}}</textarea>
+      <p>
+        <button type="submit">Save</button>
+        <span id="txt-save-msg" style="margin-left: 0.5em;"></span>
+      </p>
+    </form>
+    <p><small>Save encoding: ASCII (non-ASCII stripped). Line endings: Linux (LF).</small></p>
+    <script>
+      (function() {
+        var form = document.getElementById('txt-edit-form');
+        var msg = document.getElementById('txt-save-msg');
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          msg.textContent = 'Saving…';
+          var filepath = {{!repr(filepath)}};
+          var content = document.getElementById('txt-content').value;
+          fetch('/api/save_txt/' + encodeURIComponent(filepath), {
+            method: 'POST',
+            body: content,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+          }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+            .then(function(o) {
+              if (o.ok) { msg.textContent = 'Saved.'; msg.style.color = ''; }
+              else { msg.textContent = o.j.msg || 'Error'; msg.style.color = 'red'; }
+            }).catch(function() { msg.textContent = 'Request failed'; msg.style.color = 'red'; });
+        });
+      })();
+    </script>
+  % else:
+    % if truncated:
+      <p><small>Truncated to first 512 KiB</small></p>
+    % end
+    <pre style="white-space: pre-wrap; word-break: break-word;">{{text_content}}</pre>
+  % end
+% end

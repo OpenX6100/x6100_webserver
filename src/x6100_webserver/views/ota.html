@@ -1,0 +1,66 @@
+% rebase('base.html', title='OTA')
+
+<p>Update the on-device GUI binary (<code>/usr/sbin/x6100_gui</code>) without reflashing the full SD image.</p>
+
+<h3>Package format</h3>
+<ul>
+  <li>Upload a <strong>zip</strong> (outer filename can be anything).</li>
+  <li>The zip must contain <strong>exactly one</strong> file.</li>
+  <li>That file's name must be the lowercase hex <strong>sha256</strong> of its contents (64 chars).</li>
+</ul>
+<pre>sha=$(sha256sum x6100_gui | awk '{print $1}')
+cp x6100_gui "$sha"
+zip -j whatever-you-like.zip "$sha"</pre>
+<p>After a successful upload the GUI restarts briefly (screen blanks).</p>
+
+<h3>Upload</h3>
+<p>
+  <label for="upload-ota">GUI OTA zip:</label>
+  <input id="upload-ota" type="file" accept=".zip,application/zip">
+  <button id="upload-ota-btn">Upload &amp; restart GUI</button>
+</p>
+<p id="action-status"></p>
+
+<script>
+  function setStatus(msg, isError) {
+    const el = $("#action-status");
+    el.text(msg || "");
+    el.css("color", isError ? "crimson" : "");
+  }
+
+  $("#upload-ota-btn").on("click", function () {
+    const input = document.getElementById("upload-ota");
+    if (!input.files || !input.files[0]) {
+      setStatus("Choose a zip file first.", true);
+      return;
+    }
+    if (!confirm(
+      "Replace /usr/sbin/x6100_gui and restart the GUI? The screen will blank briefly."
+    )) {
+      return;
+    }
+    setStatus("Uploading and applying...");
+    const data = new FormData();
+    data.append("file", input.files[0]);
+    $.ajax({
+      url: "/api/ota/gui",
+      method: "POST",
+      data: data,
+      processData: false,
+      contentType: false,
+      dataType: "json",
+    })
+      .done(function (result) {
+        const sha = (result && result.sha256) ? (" sha256=" + result.sha256) : "";
+        setStatus(((result && result.msg) || "OK") + sha, false);
+      })
+      .fail(function (xhr) {
+        let msg = "Upload failed";
+        try {
+          const body = JSON.parse(xhr.responseText);
+          if (body && body.msg) msg = body.msg;
+        } catch (e) {}
+        setStatus(msg, true);
+      });
+  });
+</script>

@@ -1,0 +1,635 @@
+% rebase('base.html', title='FT8')
+
+<style>
+  .ft8-page { max-width: 1100px; margin: 0 auto; }
+  .ft8-page.inactive { opacity: 0.55; pointer-events: none; }
+  .ft8-page.inactive .ft8-banner { pointer-events: auto; opacity: 1; }
+
+  .ft8-banner {
+    background: #fff3cd; border: 1px solid #ffc107; padding: 0.6rem 1rem;
+    border-radius: 6px; margin-bottom: 0.8rem; display: none;
+  }
+  .ft8-banner.show { display: block; }
+
+  .ft8-status {
+    display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center;
+    padding: 0.6rem 0.8rem; border: 1px solid #ccc; border-radius: 6px;
+    margin-bottom: 0.8rem; font-size: 0.95rem;
+  }
+  .ft8-tx-led {
+    width: 12px; height: 12px; border-radius: 50%; background: #bbb;
+    display: inline-block; vertical-align: middle;
+  }
+  .ft8-tx-led.on {
+    background: #e53935;
+    animation: ft8-blink 0.6s step-start infinite;
+  }
+  @keyframes ft8-blink { 50% { opacity: 0.2; } }
+
+  .ft8-controls {
+    display: grid; gap: 0.6rem; margin-bottom: 0.8rem;
+    border: 1px solid #ccc; border-radius: 6px; padding: 0.7rem;
+  }
+  .ft8-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  .ft8-row label { font-weight: 600; min-width: 5.5em; margin: 0; }
+  /* Override simple.css button defaults (accent bg + accent-text=white). */
+  .ft8-btn {
+    display: inline-block;
+    border: 1px solid #666;
+    background: #fff;
+    color: #212121;
+    border-radius: 4px;
+    padding: 0.25rem 0.55rem;
+    margin: 0;
+    max-width: none;
+    line-height: 1.3;
+    cursor: pointer;
+    font-size: 0.85rem;
+    box-shadow: none;
+  }
+  .ft8-btn:enabled:hover,
+  .ft8-btn:hover {
+    background: #f0f0f0;
+    border-color: #333;
+    color: #212121;
+  }
+  .ft8-btn.active {
+    background: #1976d2;
+    color: #fff;
+    border-color: #1565c0;
+  }
+  .ft8-btn.active:enabled:hover,
+  .ft8-btn.active:hover {
+    background: #1565c0;
+    border-color: #0d47a1;
+    color: #fff;
+  }
+  .ft8-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .ft8-inputs { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
+  .ft8-inputs .field { display: flex; flex-direction: column; gap: 0.2rem; }
+  .ft8-inputs input[type="number"],
+  .ft8-inputs input[type="text"],
+  .ft8-inputs input[type="range"] { min-width: 8em; }
+
+  .ft8-lists { margin-bottom: 0.8rem; }
+  .ft8-table-wrap {
+    border: 1px solid #ccc; border-radius: 6px;
+  }
+  .ft8-table-wrap h3 { margin: 0; padding: 0.4rem 0.6rem; background: #f5f5f5; font-size: 0.95rem; }
+  table.ft8-tbl { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  table.ft8-tbl th, table.ft8-tbl td {
+    border-bottom: 1px solid #e0e0e0; padding: 0.2rem 0.35rem; text-align: left;
+    white-space: nowrap;
+  }
+  table.ft8-tbl tbody tr { cursor: pointer; }
+  /* Override simple.css tr:nth-child(2n) zebra — stripe by FT8/FT4 slot instead. */
+  table.ft8-tbl tbody tr:nth-child(n) { background-color: transparent; }
+  table.ft8-tbl tbody tr.slot-a { background-color: #ffffff; }
+  table.ft8-tbl tbody tr.slot-b { background-color: var(--accent-bg, #f5f7ff); }
+  table.ft8-tbl tbody tr:hover { background-color: #e3f2fd; }
+  table.ft8-tbl tbody tr.tx { background-color: #fff8e1; }
+  table.ft8-tbl tbody tr.to-me { background-color: #e8f5e9; }
+  table.ft8-tbl tbody tr.flash {
+    background-color: #64b5f6 !important;
+    transition: background-color 0.12s ease-out;
+  }
+  table.ft8-tbl .strike { text-decoration: line-through; opacity: 0.75; }
+
+  .ft8-waterfall {
+    border: 1px solid #ccc; border-radius: 6px; padding: 0.5rem; margin-bottom: 1rem;
+  }
+  .ft8-waterfall h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+  #ft8-waterfall-canvas {
+    width: 100%; height: auto; display: block; background: #111;
+  }
+</style>
+
+<div class="ft8-page" id="ft8-page">
+  <div class="ft8-banner" id="ft8-banner">FT8 is not running (open FT8 on the device)</div>
+
+  <div class="ft8-status" id="ft8-status">
+    <span id="st-band">—</span>
+    <span id="st-proto">—</span>
+    <span id="st-de">—</span>
+    <span>TX <span class="ft8-tx-led" id="st-tx-led"></span></span>
+    <span id="st-next">Next: —</span>
+    <span id="st-status" style="color:#666"></span>
+  </div>
+
+  <div class="ft8-controls" id="ft8-controls">
+    <div class="ft8-row">
+      <label>CQ</label>
+      <button type="button" class="ft8-btn" data-verb="TXCQ" data-arg="OFF" data-state="cq_state" data-match="OFF">OFF</button>
+      <button type="button" class="ft8-btn" data-verb="TXCQ" data-arg="EVEN" data-state="cq_state" data-match="EVEN">EVEN</button>
+      <button type="button" class="ft8-btn" data-verb="TXCQ" data-arg="ODD" data-state="cq_state" data-match="ODD">ODD</button>
+    </div>
+    <div class="ft8-row">
+      <label>Auto</label>
+      <button type="button" class="ft8-btn" data-verb="AUTO" data-arg="OFF" data-state="auto_level" data-match="OFF">OFF</button>
+      <button type="button" class="ft8-btn" data-verb="AUTO" data-arg="RES" data-state="auto_level" data-match="RES">RES</button>
+      <button type="button" class="ft8-btn" data-verb="AUTO" data-arg="FULL" data-state="auto_level" data-match="FULL">FULL</button>
+      <button type="button" class="ft8-btn" data-verb="AUTO" data-arg="PRE" data-state="auto_level" data-match="PRE">PRE</button>
+    </div>
+    <div class="ft8-row">
+      <label>Auto Mode</label>
+      <button type="button" class="ft8-btn" data-verb="AUTOMODE" data-arg="SNR" data-state="auto_mode" data-match="SNR">SNR</button>
+      <button type="button" class="ft8-btn" data-verb="AUTOMODE" data-arg="DIST" data-state="auto_mode" data-match="DIST">DIST</button>
+      <button type="button" class="ft8-btn" data-verb="AUTOMODE" data-arg="RND" data-state="auto_mode" data-match="RND">RND</button>
+      <button type="button" class="ft8-btn" data-verb="AUTOMODE" data-arg="GRID" data-state="auto_mode" data-match="GRID">GRID</button>
+    </div>
+    <div class="ft8-row">
+      <label>Processor</label>
+      <button type="button" class="ft8-btn" data-verb="PROCESSOR" data-arg="NORMAL" data-state="processor" data-match="NORMAL">NORMAL</button>
+      <button type="button" class="ft8-btn" data-verb="PROCESSOR" data-arg="NAVHF" data-state="processor" data-match="NAVHF">NAVHF</button>
+      <label style="min-width:3em;margin-left:1em">Show</label>
+      <button type="button" class="ft8-btn" data-verb="SHOW" data-arg="CQ" data-state="show_all" data-match="false">CQ</button>
+      <button type="button" class="ft8-btn" data-verb="SHOW" data-arg="ALL" data-state="show_all" data-match="true">ALL</button>
+      <label style="min-width:3em;margin-left:1em">Mode</label>
+      <button type="button" class="ft8-btn" data-verb="MODE" data-arg="FT8" data-state="protocol" data-match="FT8">FT8</button>
+      <button type="button" class="ft8-btn" data-verb="MODE" data-arg="FT4" data-state="protocol" data-match="FT4">FT4</button>
+    </div>
+    <div class="ft8-row">
+      <label>Switches</label>
+      <button type="button" class="ft8-btn" data-verb="HOLDFREQ" data-arg="ON" data-toggle="hold_freq">HOLDFREQ</button>
+      <button type="button" class="ft8-btn" data-verb="TXCALL" data-arg="ON" data-toggle="tx_call">TXCALL</button>
+      <button type="button" class="ft8-btn" data-verb="AUTODNF" data-arg="ON" data-toggle="auto_dnf">AUTODNF</button>
+    </div>
+    <div class="ft8-row">
+      <label>Actions</label>
+      <button type="button" class="ft8-btn" data-verb="TIMESYNC">TIMESYNC</button>
+      <button type="button" class="ft8-btn" data-verb="FORCESAVE">FORCESAVE</button>
+      <button type="button" class="ft8-btn" data-verb="BAND" data-arg="UP">BAND UP</button>
+      <button type="button" class="ft8-btn" data-verb="BAND" data-arg="DOWN">BAND DOWN</button>
+    </div>
+    <div class="ft8-inputs">
+      <div class="field">
+        <label for="tx-delta">TX ΔHz</label>
+        <input type="range" id="tx-delta-range" min="0" max="3000" value="1200">
+        <input type="number" id="tx-delta" min="0" max="5000" value="1200">
+      </div>
+      <button type="button" class="ft8-btn" id="btn-txdelta">Apply ΔHz</button>
+      <div class="field">
+        <label for="cq-mod">CQ modifier</label>
+        <input type="text" id="cq-mod" maxlength="15" placeholder="e.g. DX">
+      </div>
+      <button type="button" class="ft8-btn" id="btn-cqmod">Set CQMOD</button>
+      <div class="field">
+        <label for="free-msg">Free MSG</label>
+        <input type="text" id="free-msg" maxlength="13">
+      </div>
+      <button type="button" class="ft8-btn" id="btn-freemsg">Send Free MSG</button>
+    </div>
+  </div>
+
+  <div class="ft8-waterfall">
+    <h3>Slot waterfall (last 6 · 0–3000 Hz)</h3>
+    <canvas id="ft8-waterfall-canvas" width="900" height="420"></canvas>
+  </div>
+
+  <div class="ft8-lists">
+    <div class="ft8-table-wrap">
+      <h3>Messages</h3>
+      <table class="ft8-tbl" id="msg-table">
+        <thead>
+          <tr>
+            <th>UTC</th><th>Call</th><th>Grid</th><th>ΔHz</th><th>dB</th><th>km</th><th>Text</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const page = document.getElementById('ft8-page');
+  const banner = document.getElementById('ft8-banner');
+  const canvas = document.getElementById('ft8-waterfall-canvas');
+  const ctx = canvas.getContext('2d');
+
+  let pollTimer = null;
+  /** @type {Array<{key:number, tx:boolean, txDelta:number, txCall:string, signals:Array, protocol:string, autodnf:object|null}>} */
+  let slotBuffer = [];
+  /** @type {Map<number, {center_hz:number, half_width_hz:number, delta_db:number, applied:boolean}>} */
+  let autodnfBySlot = new Map();
+  let lastState = null;
+  let pageHidden = false;
+
+  function periodSec(protocol) {
+    return protocol === 'FT4' ? 7.5 : 15;
+  }
+
+  /** Floor wall/decode time to FT8/FT4 slot start (UTC epoch seconds). */
+  function slotStartOf(sec, protocol) {
+    const p = periodSec(protocol);
+    return Math.floor(Number(sec) / p) * p;
+  }
+
+  function fmtUtc(sec) {
+    const d = new Date(Number(sec) * 1000);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const ss = String(d.getUTCSeconds()).padStart(2, '0');
+    return hh + ':' + mm + ':' + ss;
+  }
+
+  function cell(text, strike) {
+    const t = text == null ? '' : String(text);
+    return strike ? '<td class="strike">' + t + '</td>' : '<td>' + t + '</td>';
+  }
+
+  function rowHtml(row, protocol) {
+    const classes = [];
+    if (row.kind === 'tx') classes.push('tx');
+    else if (row.type === 'RX_TO_ME') classes.push('to-me');
+    const ts = slotStartOf(row.time, protocol);
+    const period = periodSec(protocol);
+    // Even/odd FT8(FT4) slot parity — same stripe for all rows in that slot.
+    classes.push((Math.round(ts / period) % 2 === 0) ? 'slot-a' : 'slot-b');
+    const both = !!row.call_grid_worked;
+    const strikeCall = both || !!row.call_worked;
+    const strikeGrid = both || !!row.grid_worked;
+    const strikeText = both;
+    return '<tr class="' + classes.join(' ') + '" data-id="' + row.id + '">' +
+      '<td>' + fmtUtc(ts) + '</td>' +
+      cell(row.call || '', strikeCall) +
+      cell(row.grid || '', strikeGrid) +
+      '<td>' + row.delta_hz + '</td>' +
+      '<td>' + row.snr_db + '</td>' +
+      '<td>' + (row.dist_km != null ? row.dist_km : '') + '</td>' +
+      cell(row.text || '', strikeText) +
+      '</tr>';
+  }
+
+  function fillTable(tbody, rows, protocol) {
+    // Newest first (shm snapshot is chronological).
+    tbody.innerHTML = rows.filter(function (r) {
+      return r.type !== 'START_QSO';
+    }).slice().reverse().map(function (r) { return rowHtml(r, protocol); }).join('');
+  }
+
+  function snrToColor(snr) {
+    const lo = -12, hi = 10;
+    let t = (snr - lo) / (hi - lo);
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    // purple(~270°) → red(0°): hue decreases with SNR
+    const hue = 270 * (1 - t);
+    return 'hsl(' + hue + ' 85% 50%)';
+  }
+
+  function bwHz(protocol) {
+    return protocol === 'FT4' ? 83 : 50;
+  }
+
+  /**
+   * ft8lib freq_hz / remote delta_hz is the tone-0 base frequency (start),
+   * not the band center — see gen_ft8.c "symbol 0 (base frequency)" and
+   * monitor.c candidate span [freq_offset, freq_offset+7].
+   * Autodnf peak is PSD energy center; draw decode/TX cells at base + bw/2.
+   */
+  function signalCenterHz(baseHz, protocol) {
+    return Number(baseHz) + bwHz(protocol) / 2;
+  }
+
+  /** Own call for TX cells on the waterfall. */
+  function txOwnCall(state) {
+    return String((state && state.de_call) || 'TX').slice(0, 8);
+  }
+
+  function rebuildWaterfall(state) {
+    const protocol = state.protocol || 'FT8';
+    const rows = state.rows || [];
+    const map = new Map();
+    rows.forEach(function (r) {
+      // UI chrome, not an RF event — would pin a false TX into the click slot.
+      if (r.type === 'START_QSO') return;
+      const key = slotStartOf(r.time, protocol);
+      let slot = map.get(key);
+      if (!slot) {
+        slot = {
+          key: key,
+          tx: false,
+          txDelta: state.tx_delta_hz || 0,
+          txCall: '',
+          signals: [],
+          protocol: protocol,
+          autodnf: null
+        };
+        map.set(key, slot);
+      }
+      // Only real TX_MSG marks a TX slot (not START_QSO / kind alias).
+      if (r.type === 'TX_MSG') {
+        slot.tx = true;
+        if (r.delta_hz) slot.txDelta = r.delta_hz;
+        slot.txCall = txOwnCall(state);
+      }
+      if (r.kind === 'rx') {
+        slot.signals.push({
+          delta_hz: r.delta_hz,
+          snr_db: r.snr_db,
+          call: String(r.call || '').slice(0, 8)
+        });
+      }
+    });
+
+    // Remember autodnf markers by slot (shm only keeps the latest event).
+    if (state.autodnf && state.autodnf.time != null) {
+      const dnfKey = slotStartOf(state.autodnf.time, protocol);
+      autodnfBySlot.set(dnfKey, {
+        center_hz: state.autodnf.center_hz || 0,
+        half_width_hz: state.autodnf.half_width_hz || 35,
+        delta_db: state.autodnf.delta_db || 0,
+        applied: !!state.autodnf.applied
+      });
+    }
+
+    // Anchor to the newest list row's slot — not wall clock (current slot may have no decodes yet).
+    const period = periodSec(protocol);
+    let anchor = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i];
+      if (r.type === 'START_QSO') continue;
+      anchor = slotStartOf(r.time, protocol);
+      break;
+    }
+    if (anchor == null) {
+      slotBuffer = [];
+      drawWaterfall();
+      return;
+    }
+    slotBuffer = [];
+    const keepKeys = new Set();
+    for (let i = 0; i < 6; i++) {
+      const key = anchor - i * period;
+      keepKeys.add(key);
+      let slot = map.get(key);
+      if (!slot) {
+        slot = {
+          key: key,
+          tx: false,
+          txDelta: state.tx_delta_hz || 0,
+          txCall: '',
+          signals: [],
+          protocol: protocol,
+          autodnf: null
+        };
+      }
+      slot.autodnf = autodnfBySlot.get(key) || null;
+      slotBuffer.push(slot);
+    }
+    autodnfBySlot.forEach(function (_v, k) {
+      if (!keepKeys.has(k)) autodnfBySlot.delete(k);
+    });
+    drawWaterfall();
+  }
+
+  function drawSignalCell(xCenter, y, cellW, cellH, fill, call) {
+    const x = xCenter - cellW / 2;
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, cellW, cellH);
+    if (!call) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, cellW, cellH);
+    ctx.clip();
+    // CCW 90°: call reads bottom → top along the slot row.
+    ctx.translate(xCenter, y + cellH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.font = 'bold 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(call, 0, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(call, 0, 0);
+    ctx.restore();
+  }
+
+  function drawAutodnf(slot, y0, rowH, w, hzMax) {
+    const d = slot.autodnf;
+    if (!d) return;
+    const color = d.applied ? '#e53935' : '#1565c0';
+    const half = d.half_width_hz || 35;
+    const leftHz = Math.max(0, d.center_hz - half);
+    const rightHz = Math.min(hzMax, d.center_hz + half);
+    const xL = (leftHz / hzMax) * w;
+    const xR = (rightHz / hzMax) * w;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(xL, y0 + 2);
+    ctx.lineTo(xL, y0 + rowH - 2);
+    ctx.moveTo(xR, y0 + 2);
+    ctx.lineTo(xR, y0 + rowH - 2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('+ ' + d.delta_db + ' dB', Math.min(xL, xR) + 3, y0 + 3);
+  }
+
+  function drawWaterfall() {
+    const w = canvas.width, h = canvas.height;
+    const rows = 6;
+    // Tall enough for 8 monospace glyphs after CCW-90° (≈7px/char + pad).
+    const labelPad = 6;
+    const charW = 7;
+    const fontPx = 11;
+    const cellH = 8 * charW + labelPad; // ~62
+    const tickH = 16;
+    const rowH = (h - tickH) / rows;
+    const cellDrawH = Math.min(cellH, rowH - 4);
+    const hzMax = 3000;
+    // Cell width: at least font height (+pad) so rotated glyphs fit; also ≥ tone BW.
+    const minCellW = fontPx + 6;
+
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < rows; i++) {
+      const slot = slotBuffer[i];
+      const y0 = i * rowH;
+      const y = y0 + (rowH - cellDrawH) / 2;
+      ctx.strokeStyle = '#333';
+      ctx.beginPath();
+      ctx.moveTo(0, y0 + rowH);
+      ctx.lineTo(w, y0 + rowH);
+      ctx.stroke();
+      if (!slot) continue;
+      const toneW = (bwHz(slot.protocol) / hzMax) * w;
+      const cellW = Math.max(minCellW, toneW);
+      slot.signals.forEach(function (s) {
+        const x = (signalCenterHz(s.delta_hz, slot.protocol) / hzMax) * w;
+        drawSignalCell(x, y, cellW, cellDrawH, snrToColor(s.snr_db), s.call);
+      });
+      if (slot.tx) {
+        const x = (signalCenterHz(slot.txDelta, slot.protocol) / hzMax) * w;
+        drawSignalCell(x, y, cellW, cellDrawH, '#e53935', slot.txCall || 'TX');
+      }
+      drawAutodnf(slot, y0, rowH, w, hzMax);
+    }
+    // Hz ticks
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    for (let hz = 0; hz <= hzMax; hz += 500) {
+      const x = (hz / hzMax) * w;
+      ctx.fillText(String(hz), x + 2, h - 4);
+    }
+  }
+
+  function updateHighlight(state) {
+    document.querySelectorAll('.ft8-btn[data-state]').forEach(function (btn) {
+      const key = btn.getAttribute('data-state');
+      const match = btn.getAttribute('data-match');
+      let cur = state[key];
+      if (typeof cur === 'boolean') cur = cur ? 'true' : 'false';
+      btn.classList.toggle('active', String(cur) === match);
+    });
+    document.querySelectorAll('.ft8-btn[data-toggle]').forEach(function (btn) {
+      const key = btn.getAttribute('data-toggle');
+      const on = !!state[key];
+      btn.classList.toggle('active', on);
+      btn.setAttribute('data-arg', on ? 'OFF' : 'ON');
+    });
+  }
+
+  function renderState(state) {
+    lastState = state;
+    const active = !!(state && state.active);
+    page.classList.toggle('inactive', !active);
+    banner.classList.toggle('show', !active);
+    if (!active) {
+      document.getElementById('st-status').textContent = '';
+      return;
+    }
+
+    document.getElementById('st-band').textContent = state.band_label || '—';
+    document.getElementById('st-proto').textContent = state.protocol || '—';
+    document.getElementById('st-de').textContent =
+      (state.de_call || '') + (state.de_grid ? ' / ' + state.de_grid : '');
+    document.getElementById('st-tx-led').classList.toggle('on', !!state.tx_active);
+    document.getElementById('st-next').textContent = 'Next: ' + (state.next_tx || '—');
+    document.getElementById('st-status').textContent = state.status || '';
+
+    updateHighlight(state);
+
+    const txDelta = state.tx_delta_hz != null ? state.tx_delta_hz : 1200;
+    document.getElementById('tx-delta').value = txDelta;
+    document.getElementById('tx-delta-range').value = Math.min(3000, Math.max(0, txDelta));
+    if (state.cq_modifier != null) document.getElementById('cq-mod').value = state.cq_modifier;
+    if (state.free_msg != null) document.getElementById('free-msg').value = state.free_msg;
+
+    const protocol = state.protocol || 'FT8';
+    const rows = state.rows || [];
+    fillTable(document.querySelector('#msg-table tbody'), rows, protocol);
+    rebuildWaterfall(state);
+  }
+
+  async function sendCommand(verb, arg) {
+    const body = { verb: verb };
+    if (arg !== undefined && arg !== null && arg !== '') body.arg = arg;
+    const resp = await fetch('/api/ft8/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) {
+      document.getElementById('st-status').textContent = data.msg || ('error ' + resp.status);
+    }
+    await fetchState(true);
+  }
+
+  function clearPoll() {
+    if (pollTimer !== null) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function scheduleNext(state) {
+    clearPoll();
+    // Keep polling even when the tab is hidden — autodnf is only the latest
+    // event in shm; pausing here skips slots and breaks the waterfall markers.
+    // if (pageHidden) return;
+    let delay;
+    if (!state || !state.active) {
+      delay = 2500;
+    } else {
+      const nextIn = (state.slot && state.slot.next_in_ms != null) ? state.slot.next_in_ms : 15000;
+      delay = Math.max(200, nextIn + 500);
+    }
+    pollTimer = setTimeout(function () { fetchState(false); }, delay);
+  }
+
+  async function fetchState(afterCmd) {
+    try {
+      const resp = await fetch('/api/ft8/state');
+      const state = await resp.json();
+      renderState(state);
+      if (!afterCmd) scheduleNext(state);
+      else scheduleNext(state);
+    } catch (e) {
+      banner.classList.add('show');
+      banner.textContent = 'FT8 state fetch failed';
+      page.classList.add('inactive');
+      scheduleNext(null);
+    }
+  }
+
+  document.getElementById('ft8-controls').addEventListener('click', function (ev) {
+    const btn = ev.target.closest('.ft8-btn');
+    if (!btn || btn.id) return;
+    const verb = btn.getAttribute('data-verb');
+    if (!verb) return;
+    const arg = btn.getAttribute('data-arg');
+    sendCommand(verb, arg);
+  });
+
+  document.getElementById('btn-txdelta').addEventListener('click', function () {
+    sendCommand('TXDELTA', document.getElementById('tx-delta').value);
+  });
+  document.getElementById('btn-cqmod').addEventListener('click', function () {
+    sendCommand('CQMOD', document.getElementById('cq-mod').value);
+  });
+  document.getElementById('btn-freemsg').addEventListener('click', function () {
+    sendCommand('FREEMSG', document.getElementById('free-msg').value);
+  });
+
+  document.getElementById('tx-delta-range').addEventListener('input', function () {
+    document.getElementById('tx-delta').value = this.value;
+  });
+  document.getElementById('tx-delta').addEventListener('input', function () {
+    const v = Math.min(3000, Math.max(0, parseInt(this.value, 10) || 0));
+    document.getElementById('tx-delta-range').value = v;
+  });
+
+  document.querySelector('.ft8-lists').addEventListener('click', function (ev) {
+    const tr = ev.target.closest('tr[data-id]');
+    if (!tr) return;
+    tr.classList.add('flash');
+    setTimeout(function () { tr.classList.remove('flash'); }, 280);
+    sendCommand('CLICK', tr.getAttribute('data-id'));
+  });
+
+  // document.addEventListener('visibilitychange', function () {
+  //   pageHidden = document.hidden;
+  //   if (pageHidden) {
+  //     clearPoll();
+  //   } else {
+  //     fetchState(false);
+  //   }
+  // });
+
+  drawWaterfall();
+  fetchState(false);
+})();
+</script>

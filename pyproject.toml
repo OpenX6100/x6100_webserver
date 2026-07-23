@@ -18,4 +18,4 @@ dependencies = [
 x6100_webserver = "x6100_webserver:__main__"
 
 [tool.flit.sdist]
-include = ["src/s6100_webserver/static/", "src/s6100_webserver/views/"]
+include = ["src/x6100_webserver/static/", "src/x6100_webserver/views/"]
