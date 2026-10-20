@@ -34,3 +34,156 @@ th.hdr.name {
 #digital_modes {
     min-width: 100%;
 }
+
+
+.sstv-section {
+    margin-bottom: 2rem;
+}
+
+.sstv-files {
+    width: 100%;
+}
+
+.sstv-files td:first-child {
+    word-break: break-all;
+}
+
+.sstv-action {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.sstv-action form {
+    margin: 0;
+}
+
+.sstv-status {
+    font-weight: bold;
+}
+
+.sstv-error {
+    font-weight: bold;
+}
+
+
+.sstv-template-editor {
+    max-width: 42rem;
+}
+
+.sstv-template-editor label {
+    display: block;
+    margin-bottom: 1rem;
+}
+
+.sstv-template-editor input[type="text"] {
+    width: 100%;
+}
+
+.sstv-template-editor input:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.sstv-bottom-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.sstv-bottom-row input {
+    flex: 1 1 auto;
+}
+
+.sstv-callsign-placeholder {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-family: monospace;
+}
+
+
+.sstv-thumbnail {
+    width: 90px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.sstv-thumbnail img {
+    display: block;
+    width: 80px;
+    height: 60px;
+    object-fit: contain;
+}
+
+.sstv-filename {
+    word-break: break-all;
+}
+
+.sstv-template-row td {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+    line-height: 1.2;
+}
+
+.sstv-template-row button {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0.2rem !important;
+    padding-bottom: 0.2rem !important;
+}
+
+
+.sstv-photo-editor {
+    margin-top: 1.5rem;
+    max-width: 42rem;
+}
+
+.sstv-photo-editor h4 {
+    margin-bottom: 0.5rem;
+}
+
+#sstv-photo-workspace {
+    margin-top: 1rem;
+}
+
+#sstv-photo-canvas {
+    display: block;
+    width: min(100%, 320px);
+    height: auto;
+    aspect-ratio: 5 / 4;
+    border: 1px solid currentColor;
+    touch-action: none;
+    cursor: grab;
+}
+
+#sstv-photo-canvas:active {
+    cursor: grabbing;
+}
+
+#sstv-photo-workspace label {
+    display: block;
+    margin-top: 0.8rem;
+    max-width: 320px;
+}
+
+#sstv-photo-zoom,
+#sstv-photo-name {
+    width: 100%;
+}
+
+#sstv-photo-zoom {
+    accent-color: #0066cc;
+}
+
+#sstv-photo-zoom::-webkit-slider-thumb {
+    background: #0066cc;
+}
+
+#sstv-photo-zoom::-moz-range-thumb {
+    background: #0066cc;
+    border-color: #0066cc;
+}
+
+#sstv-photo-message {
+    margin-left: 0.6rem;
+}

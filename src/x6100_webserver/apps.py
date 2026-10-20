@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import subprocess
+from urllib.parse import quote_plus
 
 import bottle
 
@@ -17,6 +18,13 @@ bottle.TEMPLATE_PATH += [
 ]
 
 STATIC_PATH = resources.files('x6100_webserver').joinpath('static')
+
+SSTV_PICS_PATH = pathlib.Path('/mnt/sstv/tx_pics')
+SSTV_TEXT_PATH = pathlib.Path('/mnt/sstv/tx_text')
+SSTV_MAX_PNG_SIZE = 500 * 1024
+SSTV_MAX_PNG_WIDTH = 800
+SSTV_MAX_PNG_HEIGHT = 600
+SSTV_MAX_TEMPLATE_SIZE = 16 * 1024
 
 
 # Bands API
@@ -147,6 +155,179 @@ def files(filepath=""):
             else:
                 files.append(item.relative_to(path))
         return bottle.template('files', dirs=dirs, files=files)
+
+# SSTV resources routes
+
+def _sstv_safe_name(filename, suffix):
+    if not filename:
+        raise ValueError("Missing filename")
+    name = pathlib.Path(filename).name
+    if (name != filename or name in (".", "..") or name.startswith(".")
+            or not name.lower().endswith(suffix)):
+        raise ValueError(f"Only {suffix} files are allowed")
+    return name
+
+
+def _sstv_read_upload(upload, max_size):
+    data = upload.file.read(max_size + 1)
+    if len(data) > max_size:
+        raise ValueError("File is too large")
+    return data
+
+
+def _sstv_write_file(directory, filename, data):
+    directory.mkdir(parents=True, exist_ok=True)
+    tmp = directory / (filename + ".upload")
+    target = directory / filename
+    try:
+        with tmp.open("wb") as fp:
+            fp.write(data)
+            fp.flush()
+            os.fsync(fp.fileno())
+        tmp.replace(target)
+        os.sync()
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+@app.get('/sstv')
+def sstv():
+    SSTV_PICS_PATH.mkdir(parents=True, exist_ok=True)
+    SSTV_TEXT_PATH.mkdir(parents=True, exist_ok=True)
+    pics = sorted((p.name for p in SSTV_PICS_PATH.iterdir()
+                   if p.is_file() and not p.name.startswith('.')
+                   and p.suffix.lower() == '.png'), key=str.lower)
+    templates = sorted((p.name for p in SSTV_TEXT_PATH.iterdir()
+                        if p.is_file() and not p.name.startswith('.')
+                        and p.name.lower().endswith('.sstvtxt')), key=str.lower)
+    return bottle.template('sstv', pics=pics, templates=templates,
+                           status=bottle.request.query.get('status', ''),
+                           error=bottle.request.query.get('error', ''))
+
+
+
+@app.get('/sstv/image/<filename:path>')
+def sstv_image(filename):
+    try:
+        name = _sstv_safe_name(filename, '.png')
+    except ValueError:
+        bottle.abort(404)
+    return bottle.static_file(name, root=str(SSTV_PICS_PATH))
+
+
+@app.post('/sstv/upload/image')
+def sstv_upload_image():
+    upload = bottle.request.files.get('file')
+    try:
+        if upload is None:
+            raise ValueError("Choose a PNG file first")
+        name = _sstv_safe_name(upload.filename, '.png')
+        data = _sstv_read_upload(upload, SSTV_MAX_PNG_SIZE)
+        if (len(data) < 24 or data[:8] != b'\x89PNG\r\n\x1a\n'
+                or data[12:16] != b'IHDR'):
+            raise ValueError("The selected file is not a valid PNG")
+        width = int.from_bytes(data[16:20], 'big')
+        height = int.from_bytes(data[20:24], 'big')
+        if width < 1 or height < 1:
+            raise ValueError("The PNG has invalid dimensions")
+        if width > SSTV_MAX_PNG_WIDTH or height > SSTV_MAX_PNG_HEIGHT:
+            raise ValueError("Maximum image dimensions are 800x600 pixels")
+        if width < height:
+            raise ValueError("The image must use landscape orientation")
+        _sstv_write_file(SSTV_PICS_PATH, name, data)
+        bottle.redirect('/sstv?status=Image+uploaded')
+    except (ValueError, OSError) as e:
+        bottle.redirect('/sstv?error=' + quote_plus(str(e)))
+
+
+@app.post('/sstv/create/template')
+def sstv_create_template():
+    try:
+        template_name = (bottle.request.forms.get('template_name') or '').strip()
+        middle = (bottle.request.forms.get('middle') or '').strip()
+        bottom = (bottle.request.forms.get('bottom') or '').strip()
+
+        if not template_name:
+            raise ValueError("Enter a template name")
+        if template_name.lower().endswith('.sstvtxt'):
+            template_name = template_name[:-8]
+        if not template_name:
+            raise ValueError("Enter a template name")
+        if pathlib.Path(template_name).name != template_name or template_name in ('.', '..'):
+            raise ValueError("Invalid template name")
+        if any(c in template_name for c in ('/', '\\', '\x00')):
+            raise ValueError("Invalid template name")
+
+        filename = template_name + '.sstvtxt'
+        filename = _sstv_safe_name(filename, '.sstvtxt')
+        if (SSTV_TEXT_PATH / filename).exists():
+            raise ValueError("A template with this name already exists")
+
+        # The firmware appends the configured local callsign to 'bottom'.
+        # Keep exactly one separating space when the user entered bottom text.
+        if bottom:
+            bottom += ' '
+
+        obj = {"middle": middle, "bottom": bottom}
+        data = (json.dumps(obj, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+        if len(data) > SSTV_MAX_TEMPLATE_SIZE:
+            raise ValueError("Template is too large")
+        _sstv_write_file(SSTV_TEXT_PATH, filename, data)
+        bottle.redirect('/sstv?status=Template+created')
+    except (ValueError, OSError) as e:
+        bottle.redirect('/sstv?error=' + quote_plus(str(e)))
+
+
+@app.post('/sstv/upload/template')
+def sstv_upload_template():
+    upload = bottle.request.files.get('file')
+    try:
+        if upload is None:
+            raise ValueError("Choose an SSTVTXT file first")
+        name = _sstv_safe_name(upload.filename, '.sstvtxt')
+        data = _sstv_read_upload(upload, SSTV_MAX_TEMPLATE_SIZE)
+        try:
+            obj = json.loads(data.decode('utf-8'))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("The template is not valid UTF-8 JSON")
+        if not isinstance(obj, dict):
+            raise ValueError("The template must contain a JSON object")
+        for key in ('middle', 'bottom'):
+            if key in obj and obj[key] is not None and not isinstance(obj[key], str):
+                raise ValueError(f'"{key}" must be a string')
+        _sstv_write_file(SSTV_TEXT_PATH, name, data)
+        bottle.redirect('/sstv?status=Template+uploaded')
+    except (ValueError, OSError) as e:
+        bottle.redirect('/sstv?error=' + quote_plus(str(e)))
+
+
+def _sstv_delete(directory, filename, suffix):
+    name = _sstv_safe_name(filename, suffix)
+    path = directory / name
+    if not path.is_file():
+        raise ValueError("File not found")
+    path.unlink()
+    os.sync()
+
+
+@app.post('/sstv/delete/image')
+def sstv_delete_image():
+    try:
+        _sstv_delete(SSTV_PICS_PATH, bottle.request.forms.get('filename'), '.png')
+        bottle.redirect('/sstv?status=Image+deleted')
+    except (ValueError, OSError) as e:
+        bottle.redirect('/sstv?error=' + quote_plus(str(e)))
+
+
+@app.post('/sstv/delete/template')
+def sstv_delete_template():
+    try:
+        _sstv_delete(SSTV_TEXT_PATH, bottle.request.forms.get('filename'), '.sstvtxt')
+        bottle.redirect('/sstv?status=Template+deleted')
+    except (ValueError, OSError) as e:
+        bottle.redirect('/sstv?error=' + quote_plus(str(e)))
+
 
 # Timezone routes
 

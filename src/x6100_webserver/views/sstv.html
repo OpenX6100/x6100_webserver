@@ -1,0 +1,247 @@
+% rebase('base.html', title='SSTV Resources')
+<h2>SSTV Resources</h2>
+<p>Manage images and text templates used by the SSTV transmitter.</p>
+
+% if status:
+<p class="sstv-status">{{status}}</p>
+% end
+% if error:
+<p class="sstv-error">{{error}}</p>
+% end
+
+<section class="sstv-section">
+  <h3>TX Images</h3>
+  % if pics:
+  <table class="sstv-files">
+    <tbody>
+    % for item in pics:
+      <tr class="sstv-image-row">
+        <td class="sstv-thumbnail"><img src="/sstv/image/{{item}}" alt="{{item}}"></td>
+        <td class="sstv-filename">{{item}}</td>
+        <td class="sstv-action">
+          <form method="post" action="/sstv/delete/image" onsubmit="return confirm('Delete this image?');">
+            <input type="hidden" name="filename" value="{{item}}">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    % end
+    </tbody>
+  </table>
+  % else:
+  <p>No uploaded PNG images.</p>
+  % end
+
+  <div class="sstv-photo-editor">
+    <h3>Create new TX Image</h3>
+    <p>Choose a photo, adjust the crop, then save as 320x256 PNG to the radio.</p>
+    <input type="file" id="sstv-photo-input" accept="image/*">
+
+    <div id="sstv-photo-workspace" hidden>
+      <canvas id="sstv-photo-canvas" width="320" height="256"></canvas>
+      <small>Drag the image to adjust the crop.</small>
+
+      <label for="sstv-photo-zoom">Zoom
+        <input type="range" id="sstv-photo-zoom" min="1" max="3" step="0.01" value="1">
+      </label>
+
+      <label for="sstv-photo-name">Filename
+        <input type="text" id="sstv-photo-name" maxlength="64" placeholder="sstv-image">
+      </label>
+
+      <button type="button" id="sstv-photo-save">Save to Radio</button>
+      <span id="sstv-photo-message" role="status"></span>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    const input = document.getElementById('sstv-photo-input');
+    const workspace = document.getElementById('sstv-photo-workspace');
+    const canvas = document.getElementById('sstv-photo-canvas');
+    const ctx = canvas.getContext('2d');
+    const zoom = document.getElementById('sstv-photo-zoom');
+    const nameInput = document.getElementById('sstv-photo-name');
+    const saveButton = document.getElementById('sstv-photo-save');
+    const message = document.getElementById('sstv-photo-message');
+
+    let image = null;
+    let objectUrl = null;
+    let baseScale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let dragging = false;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    function clampOffsets() {
+      if (!image) return;
+      const scale = baseScale * Number(zoom.value);
+      const w = image.naturalWidth * scale;
+      const h = image.naturalHeight * scale;
+      const maxX = Math.max(0, (w - canvas.width) / 2);
+      const maxY = Math.max(0, (h - canvas.height) / 2);
+      offsetX = Math.max(-maxX, Math.min(maxX, offsetX));
+      offsetY = Math.max(-maxY, Math.min(maxY, offsetY));
+    }
+
+    function draw() {
+      if (!image) return;
+      clampOffsets();
+      const scale = baseScale * Number(zoom.value);
+      const w = image.naturalWidth * scale;
+      const h = image.naturalHeight * scale;
+      const x = (canvas.width - w) / 2 + offsetX;
+      const y = (canvas.height - h) / 2 + offsetY;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, x, y, w, h);
+    }
+
+    function defaultName(filename) {
+      const dot = filename.lastIndexOf('.');
+      const stem = dot > 0 ? filename.slice(0, dot) : filename;
+      const safe = stem.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+      return safe || 'sstv-image';
+    }
+
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      message.textContent = '';
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(file);
+      const candidate = new Image();
+      candidate.onload = () => {
+        image = candidate;
+        baseScale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+        offsetX = 0;
+        offsetY = 0;
+        zoom.value = '1';
+        nameInput.value = defaultName(file.name);
+        workspace.hidden = false;
+        draw();
+      };
+      candidate.onerror = () => {
+        image = null;
+        workspace.hidden = true;
+        message.textContent = 'Unsupported image format.';
+      };
+      candidate.src = objectUrl;
+    });
+
+    zoom.addEventListener('input', draw);
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (!image) return;
+      dragging = true;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      offsetX += event.clientX - pointerX;
+      offsetY += event.clientY - pointerY;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      draw();
+    });
+    const stopDrag = () => { dragging = false; };
+    canvas.addEventListener('pointerup', stopDrag);
+    canvas.addEventListener('pointercancel', stopDrag);
+
+    saveButton.addEventListener('click', () => {
+      if (!image) return;
+      let filename = nameInput.value.trim();
+      if (!filename) {
+        message.textContent = 'Enter a filename.';
+        return;
+      }
+      filename = filename.replace(/\.png$/i, '');
+      if (!/^[A-Za-z0-9_-]+$/.test(filename)) {
+        message.textContent = 'Use only letters, numbers, hyphens and underscores in the filename.';
+        return;
+      }
+      message.textContent = 'Preparing image...';
+      saveButton.disabled = true;
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          message.textContent = 'Could not create PNG image.';
+          saveButton.disabled = false;
+          return;
+        }
+        const form = new FormData();
+        form.append('file', blob, filename + '.png');
+        fetch('/sstv/upload/image', { method: 'POST', body: form })
+          .then((response) => {
+            if (!response.ok) throw new Error();
+            window.location.href = response.url || '/sstv';
+          })
+          .catch(() => {
+            message.textContent = 'Upload failed.';
+            saveButton.disabled = false;
+          });
+      }, 'image/png');
+    });
+  })();
+  </script>
+</section>
+
+<section class="sstv-section">
+  <h3>Create Reply Template</h3>
+  <p>Create a new template for your SSTV replies. The target callsign and your callsign are added automatically by the radio.</p>
+
+  <form method="post" action="/sstv/create/template" class="sstv-template-editor">
+    <label>Top text
+      <input type="text" value="Reserved for target callsign" disabled>
+    </label>
+
+    <label>Middle text
+      <input type="text" name="middle" placeholder="TNX FOR QSO" maxlength="80">
+    </label>
+
+    <label>Bottom text
+      <span class="sstv-bottom-row">
+        <input type="text" name="bottom" placeholder="73 DE" maxlength="80">
+        <span class="sstv-callsign-placeholder">&lt;MY CALLSIGN&gt;</span>
+      </span>
+    </label>
+
+    <label>Template name
+      <input type="text" name="template_name" placeholder="qso-reply" maxlength="64" required>
+    </label>
+
+    <button type="submit">Create Template</button>
+  </form>
+</section>
+
+<section class="sstv-section">
+  <h3>Text Templates</h3>
+  % if templates:
+  <table class="sstv-files">
+    <tbody>
+    % for item in templates:
+      <tr class="sstv-template-row">
+        <td>{{item}}</td>
+        <td class="sstv-action">
+          <form method="post" action="/sstv/delete/template" onsubmit="return confirm('Delete this template?');">
+            <input type="hidden" name="filename" value="{{item}}">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    % end
+    </tbody>
+  </table>
+  % else:
+  <p>No SSTV text templates.</p>
+  % end
+
+  <form method="post" action="/sstv/upload/template" enctype="multipart/form-data">
+    <label>Upload SSTVTXT template
+      <input type="file" name="file" accept=".sstvtxt,application/json" required>
+    </label>
+    <button type="submit">Upload</button>
+  </form>
+  <small>Maximum file size: 16 KB. The file must contain valid JSON.</small>
+</section>
